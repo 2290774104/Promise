@@ -56,7 +56,10 @@ class Promise {
     this.onResolveCallbacks = [];
     this.onRejectedCallbacks = [];
     const resolve = (value) => {
-      // 只有 pending 状态才可以修改状态
+      // 为了满足ECMAScript的功能自己额外的添加
+      if (value instanceof Promise) {
+        return value.then(resolve, reject);
+      }
       if (this.status === PENDING) {
         this.value = value;
         this.status = FULFILLED;
@@ -80,7 +83,9 @@ class Promise {
       reject(e);
     }
   }
-
+  catch(errFn) {
+    return this.then(null, errFn); // 针对失败做处理，成功无视
+  }
   then(onFulfilled, onRejected) {
     // then方法中如果没有传递参数 那么可以透传到下一个then中
     onFulfilled = typeof onFulfilled === "function" ? onFulfilled : (v) => v;
@@ -147,5 +152,48 @@ Promise.deferred = function () {
   });
   return dfd;
 };
-// npm install promises-aplus-tests -g
+Promise.resolve = function (value) {
+  return new Promise((resolve, reject) => {
+    resolve(value);
+  });
+};
+Promise.reject = function (reason) {
+  return new Promise((resolve, reject) => {
+    reject(reason);
+  });
+};
+// 都成功才成功，有一个失败就失败了
+Promise.all = function (values) {
+  return new Promise((resolve, reject) => {
+    let idx = 0;
+    let result = [];
+    values.forEach((item, i) => {
+      Promise.resolve(item).then((val) => {
+        result[i] = val; // 数组的长度不准确, 用索引映射成功的结果
+        if (++idx === values.length) {
+          resolve(result);
+        }
+      }, reject); // 如果任何一个promise失败了那么all就失败了
+    });
+  });
+};
+Promise.race = function (values) {
+  return new Promise((resolve, reject) => {
+    values.forEach((item, i) => {
+      Promise.resolve(item).then(resolve, reject); // 如果任何一个promise失败了那么all就失败了
+    });
+  });
+};
+Promise.prototype.finally = function (fn) {
+  return this.then(
+    (val) => {
+      return Promise.resolve(fn()).then(() => val);
+    },
+    (r) => {
+      return Promise.resolve(fn()).then(() => {
+        throw r;
+      });
+    }
+  );
+};
 module.exports = Promise;
